@@ -1,0 +1,164 @@
+Melanie Berry
+
+1.  Parallelize the following algorithms using parallel_for:
+
+a.	Matrix multiplication 
+
+matrix operator *(const matrix &x, const matrix &y)
+{
+	if (x.cols != y.rows)
+	{
+		throw std::invalid_argument("Invalid arguments");
+	}
+
+	matrix z;
+	z.create(x.rows, y.cols);
+
+	parallel_for (0, x.rows, [&](unsigned i)) {
+		for (unsigned j = 0; j < y.cols; j++) {
+			int zz = 0;
+
+			for (unsigned k = 0; k < x.cols; k++) {
+				zz += x(i, k) * y(k, j);
+			}
+			z(i, j) = zz;
+		}
+	}
+	return z;
+	
+}
+
+
+b.	Histogram calculations.  Assume values of x are between 0 and 255 (inclusive))
+
+matrix histogram(const matrix &x)
+{
+	matrix h{256, 1};
+	
+	parallel_for (0; x.rows; [&] unsigned i)
+	{
+		for (unsigned j = 0; j < y.cols; j++)
+		{
+			auto value = x(i, j);
+			
+			if (value < 0)
+			{
+				h(0, 0)++;
+			}
+			else if (value >= 255)
+			{
+				h(255, 0)++;
+			}
+			else 
+			{
+				h(value, 0)++;
+			}
+		}
+	}
+	
+	return h;
+}
+
+
+2.	parallel_for uses the queue_work function instead of create_thread.
+a.	Why?
+	Because it is likely that parallel_for will be creating a lot of threads 
+	it is easier to use queue_work instead of create_thread. Create_thread 
+	has a lot of overhead associated with it (not as much as queue_work if 
+	the number of threads created is small but way more if there are a lot 
+	of threads being created).
+
+b.	Give an example of when should you use create_thread instead of queue_work 
+	to execute work asynchronously?
+	queue_work is good for when there is a large number of short tasks but 
+	create_thread is better for when there are just a few long tasks. The 
+	reason for this is because queue_work allows you to avoid the overhead 
+	of creating threads a lot of times. If you're only going to be creating 
+	a few threads though then it's better to just create them using create_thread 
+	so that you're not using more than you need.
+	
+3.	Consider the following program:
+
+int main()
+{
+	int value = 32;
+	queue_work([&]
+	{
+		value -= 17;
+		printf("%d\n", value);
+	});
+	return value;
+}
+
+a.  What is the result of this program?  (Hint: its not always the same).
+	Since this program is running asynchronously we run the risk of the main exiting before 
+	the asynchronous function. This will cause a difference in your result depending on when 
+	it exits. If the asynchronous exits first then you will get back a result of 15 since the 
+	subtraction was performed. If the main exits first however, you will end up with 32 since 
+	the subtraction wasn't performed.
+
+b.  Correct the defect.
+	The best way to solve this problem is to use a future since we can have it wait for 
+	asynchronous functions to complete. The way to do this is to get the future for the 
+	queue_work, perform the operation, and then wait until that is complete before exiting.
+	auto f = queue_work([&] {
+      		// Perform subtraction and printing
+    	});
+    	f.wait()
+
+
+4.  Consider the following program:
+
+// Image processing pipeline
+concurrent_queue<matrix> pipeline;
+
+future<matrix> blur_image_async(matrix x);
+
+int main()
+{
+	// Start the pipeline.
+	auto pipeline_thread = create_thread([]
+	{
+		for (;;)
+		{
+			auto x = pipeline.pop();
+			auto h = histogram(x);
+			
+			// TODO: I have to do something with h, but what?
+		}
+	});
+
+
+	auto x = load_image_async("image.png").then([&] {
+		auto y = blur_image_async(std::move(x)).then([&] {
+			auto h = histogram(y);
+		});
+	});
+
+	// Never exits
+	join(pipeline_thread);
+	return 0;
+}
+
+a.	Implement blur_image_async using the pipeline.  
+	Note: use the convolution algorithm from your homework to blur the image.
+	Hint: You may need to modify what goes into the pipeline. 
+
+b.	Modify the program to 
+	1. Load the image (x) asynchronously with load_image_async
+	2. and compute the histogram of y (see question 1) using a continuation. 
+
+	
+5a.	How does a semaphore differ from mutex?
+	A semaphore differs from a mutex because a semaphore allows access to more than one 
+	process at a time while a mutex only allows access to one at a time. A semaphore 
+	can be customized to allow any number of processes access at once.
+
+5b. Describe the operation of a bar (sitting down, ordering a drink) in terms
+	of a semaphore and mutex.
+	A mutex only allows one process to access a section at a time so in terms of a bar 
+	it would be like a bar with only one stool. Nobody else could be seated and access 
+	the resources until that first guy is done. A semaphore can allow access for more 
+	than one process at a time. So in this case it's like a bar with multiple seats. 
+	A certain number of people could sit down and new people could come in as each 
+	person finishes and leaves the bar.
